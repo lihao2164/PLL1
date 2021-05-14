@@ -1,0 +1,76 @@
+# -*- coding: utf-8 -*-
+
+import uuid
+import requests
+import base64
+import hashlib
+import time
+import json
+import os
+
+
+YOUDAO_URL = 'https://openapi.youdao.com/ocr_table'
+APP_KEY = '72cff2975f366f3a'
+APP_SECRET = 'Q4YCH6jHxrjAP2nzaz1FpWcBcAL7EDZF'
+
+
+def truncate(q):
+    if q is None:
+        return None
+    q_utf8 = q.decode("utf-8")
+    size = len(q_utf8)
+    return q_utf8 if size <= 20 else q_utf8[0:10] + str(size) + q_utf8[size - 10:size]
+
+
+def encrypt(signStr):
+    hash_algorithm = hashlib.sha256()
+    hash_algorithm.update(signStr.encode('utf-8'))
+    return hash_algorithm.hexdigest()
+
+
+def do_request(data):
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    return requests.post(YOUDAO_URL, data=data, headers=headers)
+
+
+def connect(img_path):
+    f = open(img_path, 'rb')  # 二进制方式打开图文件
+    q = base64.b64encode(f.read())  # 读取文件内容，转换为base64编码
+    f.close()
+
+    data = {}
+    data['type'] = '1'
+    data['q'] = q
+    data['docType'] = 'excel'
+    data['signType'] = 'v3'
+    curtime = str(int(time.time()))
+    data['curtime'] = curtime
+    salt = str(uuid.uuid1())
+    signStr = APP_KEY + truncate(q) + salt + curtime + APP_SECRET
+    sign = encrypt(signStr)
+    data['appKey'] = APP_KEY
+    data['salt'] = salt
+    data['sign'] = sign
+
+    response = do_request(data)
+    #print response.content
+    response_json = json.loads(response.text)
+    excel_table_base64 = response_json.get('Result').get('tables')[0]
+    print('转换完成')
+    return excel_table_base64
+
+def orc_excel(img_path,excel_path):
+    excel_table_base64 = connect(img_path)
+    decoded = base64.b64decode(excel_table_base64)
+    with open(excel_path,'wb') as f:
+        f.write(decoded)
+    print('保存成功')
+
+
+if __name__ == '__main__':
+    path="D:/下载/2012p"
+    filenames = os.listdir(path)  # 将path路径下的所有文件名存入列表filenames
+    for filename in filenames:  # 循环遍历每个文件
+        img_path = r'D:/下载/2012p/%s'%filename
+        excel_path = r'D:/下载/2012poutput/%s.xlsx'%filename
+        orc_excel(img_path,excel_path)
